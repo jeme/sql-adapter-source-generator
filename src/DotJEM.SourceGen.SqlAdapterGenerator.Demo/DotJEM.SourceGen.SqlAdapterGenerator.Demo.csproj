@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- When the generator is added via NuGet, these should be present via the props file. -->
+  <!-- In other words, you do not need to import the props file when referencing the NuGet package. -->
+  <Import Project="..\DotJEM.SourceGen.SqlAdapterGenerator\build\DotJem.SourceGen.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- The namespace under which we generate the constants. -->
+    <DotJEMTemplateVisibility>public</DotJEMTemplateVisibility>
+    <!-- The visibility of the classes in which the constants are declared. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="SqlFiles\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="SqlFiles\*.sql" NameClass="SqlAdapter" />
+  </ItemGroup>
+
+
+</Project>

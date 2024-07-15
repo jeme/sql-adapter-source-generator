@@ -1,0 +1,68 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+    <GenerateDocumentationFile>False</GenerateDocumentationFile>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Authors>DotJEM</Authors>
+    <Copyright>Copyright © DotJEM 2023</Copyright>
+    <Description></Description>
+    <IncludeSymbols>False</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <AssemblyName>$(MSBuildProjectName)</AssemblyName>
+    <RootNamespace>$(MSBuildProjectName.Replace(" ", "_"))</RootNamespace>
+
+    <Version></Version>
+    <PackageVersion></PackageVersion>
+    <InformationalVersion></InformationalVersion>
+    <PackageVersion></PackageVersion>
+    <AssemblyVersion></AssemblyVersion>
+    <FileVersion></FileVersion>
+
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+
+    <PackageIcon>avatar.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>Source Generators;Source Generator;Incremental;Embedding</PackageTags>
+
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\avatar.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Include="..\..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <!-- Package the generator in the analyzer directory of the nuget package -->
+    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <!-- Package the props and target files. The files need to match the name of the project. -->
+    <!-- See https://github.com/NuGet/Home/issues/9055 -->
+    <None Include="build/*" Pack="true" PackagePath="build/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="bin\Debug\netstandard2.0\\DotJEM.SourceGen.SqlAdapterGenerator.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="MyGenerator_EnableLogging" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,10 @@
+﻿<Project>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="DotJEMVisibility"/>
+    <CompilerVisibleProperty Include="DotJEMNamespace"/>
+
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="ClassName"/>
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="Visibility"/>
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="Namespace"/>
+  </ItemGroup>
+</Project>
