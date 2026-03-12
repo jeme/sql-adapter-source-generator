@@ -1,6 +1,4 @@
 ﻿--spec: DataTable
-
---method:CreateTable
 CREATE TABLE [@{schema}].[@{data_table_name}] (
     [Id] [uniqueidentifier] NOT NULL,
     [Version] [int] NOT NULL,
@@ -20,17 +18,16 @@ ALTER TABLE [@{schema}].[@{data_table_name}] ADD CONSTRAINT [DF_@{data_table_nam
 
 --method:Insert
 INSERT INTO [@{schema}].[@{data_table_name}]
-           ([ContentType]
-           ,[Version]
-           ,[Created]
-           ,[Updated]
-           ,[CreatedBy]
-           ,[UpdatedBy]
-           ,[Data])
+           ([ContentType] --type: varchar(64)
+           ,[Version]     --type: int
+           ,[Created]     --type: datetime
+           ,[Updated]     --type: datetime
+           ,[CreatedBy]   --type: nvarchar(256)
+           ,[UpdatedBy]   --type: nvarchar(256)
+           ,[Data])       --type: nvarchar(max) 
      OUTPUT 'C', INSERTED.[Id], INSERTED.[Version], @timestamp, INSERTED.[CreatedBy], INSERTED.[Data] 
 		INTO [@{schema}].[@{log_table_name}]([Event], [Id], [Version], [Time], [User], [Data])
-     OUTPUT 
-            INSERTED.[Id]
+     OUTPUT INSERTED.[Id]
      VALUES
            (@contentType
            ,0
