@@ -42,13 +42,13 @@ namespace DotJEM.SourceGen.SqlAdapterGenerator.Demo
             SqlCommand command = new(cmd, connection);
 
 
-            foreach ((string name, SqlDbType sqlDbType, object value) in parameters)
-                command.Parameters.Add(name, sqlDbType).Value = value;
-            return new SqlServerCommand(connection, command);
+            //foreach ((string name, SqlDbType sqlDbType, object value) in parameters)
+            //    command.Parameters.Add(name, sqlDbType).Value = value;
+            //return new SqlServerCommand(connection, command);
 
 
-            SqlDataReader reader = null; // execute command and get reader 
-            reader.
+            //SqlDataReader reader = null; // execute command and get reader 
+            //reader.
 
 
             return default;

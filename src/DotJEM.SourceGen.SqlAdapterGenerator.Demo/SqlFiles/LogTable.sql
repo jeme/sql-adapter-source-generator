@@ -27,7 +27,7 @@ INSERT INTO [@{schema}].[@{data_table_name}]
            ,[Data])       
      OUTPUT 'C', INSERTED.[Id], INSERTED.[Version], @timestamp, INSERTED.[CreatedBy], INSERTED.[Data] 
 		INTO [@{schema}].[@{log_table_name}]([Event], [Id], [Version], [Time], [User], [Data])
-     OUTPUT INSERTED.[Id]
+     OUTPUT INSERTED.[Id] 
      VALUES
            (@contentType
            ,0

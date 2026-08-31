@@ -21,11 +21,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AdditionalFiles Include="SqlFiles\*.sql" NameClass="SqlAdapter" />
+    <AdditionalFiles Include="SqlFiles\*.sql" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+	  <ProjectReference Include="..\DotJEM.SourceGen.SqlAdapterGenerator\DotJEM.SourceGen.SqlAdapterGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 

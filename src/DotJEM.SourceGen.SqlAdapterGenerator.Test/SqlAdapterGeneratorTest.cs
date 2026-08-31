@@ -9,7 +9,7 @@ public class SqlAdapterGeneratorTest
     [Test]
     public void Test1()
     {
-        SqlAdapterGeneratorFactory generator = new SqlAdapterGeneratorFactory();
+        Factories.SqlAdapterGenerator generator = new Factories.SqlAdapterGenerator();
 
         TableSpec output = generator.Generate("""
                                            --spec: DataTable
