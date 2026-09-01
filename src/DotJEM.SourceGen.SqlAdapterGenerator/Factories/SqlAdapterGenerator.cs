@@ -14,6 +14,8 @@ namespace DotJEM.SourceGen.SqlAdapterGenerator.Factories;
 
 public class AdapterGenerator
 {
+    private Dictionary<string, string> map = new();
+
     public TableSpec Generate(string source)
     {
         //IEnumerable<(string Key, string Template)> parts = new TableSpecReader().ReadToEnd(new StringReader(source)):
@@ -38,26 +40,25 @@ public class AdapterGenerator
         return new TableSpec();
     }
 
-    public void Generate()
+    public string Generate()
     {
-
-
-
+        return "";
     }
 
-    public void AddFile(AdditionalText content, TemplateOptions tupleOptions, CancellationToken token)
+    public void AddFile(string path, string content, TemplateOptions options)
     {
-        string name = PascalCaseTranform.Transform(Path.GetFileNameWithoutExtension(content.Path));
-        string sourceFromFile = content.GetText(token)!.ToString();
+        string name = PascalCaseTranform.Transform(Path.GetFileNameWithoutExtension(path));
 
-        //new SqlFileReader(sourceFromFile);
-        IEnumerable<SqlTemplateSpec> specs = SqlFileReader.ReadToEnd(new StringReader(sourceFromFile));
+        IEnumerable<SqlTemplateSpec> specs = SqlFileReader
+            .ReadToEnd(new StringReader(content))
+            .ToList();
         foreach (SqlTemplateSpec spec in specs)
         {
 
+            
         }
 
-
+        Console.WriteLine();
     }
 }
 
@@ -87,7 +88,7 @@ public class SqlFileReader
             {
                 if (!capturingHeader)
                 {
-                    yield return new SqlTemplateSpec(buffer.ToString(), SqlTemplateVariables.From(variables));
+                    if(buffer.Length > 0) yield return new SqlTemplateSpec(buffer.ToString(), SqlTemplateVariables.From(variables));
                     buffer.Clear();
                     variables.Clear();
                 }

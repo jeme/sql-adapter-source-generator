@@ -1,4 +1,5 @@
 ﻿using DotJEM.SourceGen.SqlAdapterGenerator.Factories;
+using DotJEM.SourceGen.SqlAdapterGenerator.Util;
 using NUnit.Framework;
 
 namespace DotJEM.SourceGen.SqlAdapterGenerator.Test;
@@ -6,12 +7,14 @@ namespace DotJEM.SourceGen.SqlAdapterGenerator.Test;
 [TestFixture]
 public class SqlAdapterGeneratorTest
 {
+
+
     [Test]
     public void Test1()
     {
-        Factories.SqlAdapterGenerator generator = new Factories.SqlAdapterGenerator();
-
-        TableSpec output = generator.Generate("""
+        AdapterGenerator generator = new ();
+        generator.AddFile("C:\\dummy\\path\\file.sql",
+                                           """
                                            --spec: DataTable
                                            CREATE TABLE [@{schema}].[@{data_table_name}] (
                                                [Id] [uniqueidentifier] NOT NULL,
@@ -76,11 +79,10 @@ public class SqlAdapterGeneratorTest
                                                  ,[RV]
                                              FROM [@{schema}].[@{data_table_name}]
                                              WHERE [Id] = @id;
+                                           """, new TemplateOptions("", "", ""));
 
-
-
-
-                                           """);
+        string output = generator.Generate();
+        
         Assert.That(output.ToString(), Is.EqualTo(""));
     }
 

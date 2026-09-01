@@ -1,13 +1,14 @@
-﻿using System;
+﻿using DotJEM.SourceGen.SqlAdapterGenerator.Factories;
+using DotJEM.SourceGen.SqlAdapterGenerator.Util;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Diagnostics;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection.Metadata;
 using System.Threading;
-using DotJEM.SourceGen.SqlAdapterGenerator.Factories;
-using DotJEM.SourceGen.SqlAdapterGenerator.Util;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace DotJEM.SourceGen.SqlAdapterGenerator;
 
@@ -46,8 +47,7 @@ public class SqlAdapterGenerator : IIncrementalGenerator
             .Select(static (tuple, token) =>
             {
                 Debug.WriteLine("Collecting additional texts: " + tuple.Left.Path);
-
-
+                
                 (AdditionalText text, AnalyzerConfigOptionsProvider provider) = tuple;
                 AnalyzerConfigOptions options = provider.GetOptions(text);
                 options.TryGetValue($"build_metadata.AdditionalFiles.Visibility", out string visibility);
@@ -74,7 +74,7 @@ public class SqlAdapterGenerator : IIncrementalGenerator
                 foreach ((AdditionalText text, TemplateOptions options) in array)
                 {
                     files.Add(text.Path);
-                    generator.AddFile(text, options, token);
+                    generator.AddFile(text.Path, text.GetText(token)!.ToString(), options);
                 }
                 return files.ToArray();// generator.Generate();
             });
