@@ -7,6 +7,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Reflection.Metadata;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
@@ -15,30 +16,8 @@ namespace DotJEM.SourceGen.SqlAdapterGenerator.Factories;
 public class AdapterGenerator
 {
     private Dictionary<string, string> map = new();
+    private Dictionary<string, TableSpec> schemas = new();
 
-    public TableSpec Generate(string source)
-    {
-        //IEnumerable<(string Key, string Template)> parts = new TableSpecReader().ReadToEnd(new StringReader(source)):
-
-        TSqlParser parser = TSqlParser.CreateParser(SqlVersion.Sql170, false);
-        TSqlScript script = (TSqlScript)parser.Parse(new StringReader(source), out IList<ParseError> errors);
-
-        TSqlBatch first = script.Batches.First();
-        CreateTableStatement createTable = first.Statements.First() as CreateTableStatement;
-
-        string schemaName = createTable.SchemaObjectName.SchemaIdentifier.Value;
-        string tableName = createTable.SchemaObjectName.BaseIdentifier.Value;
-        IList<ColumnSpec> columns = createTable.Definition.ColumnDefinitions
-            .Select(def =>
-            {
-                string identifier = def.ColumnIdentifier.Value;
-                string type = def.DataType.Name.BaseIdentifier.Value;
-                return new ColumnSpec(identifier, type);
-            }).ToArray();
-
-
-        return new TableSpec();
-    }
 
     public string Generate()
     {
@@ -54,11 +33,38 @@ public class AdapterGenerator
             .ToList();
         foreach (SqlTemplateSpec spec in specs)
         {
+            TSqlParser parser = TSqlParser.CreateParser(SqlVersion.Sql170, false);
+            TSqlScript script = (TSqlScript)parser.Parse(new StringReader(spec.Content), out IList<ParseError> errors);
+            foreach (TSqlBatch batch in script.Batches)
+            {
+                foreach (TSqlStatement statement in batch.Statements)
+                {
+                    if (statement is CreateTableStatement createTableStatement)
+                    {
+                        AddTableSpec(spec, createTableStatement);
+                    }
+                }
+            }
 
-            
+
+
         }
 
         Console.WriteLine();
+    }
+
+    private void AddTableSpec(SqlTemplateSpec spec, CreateTableStatement statement)
+    {
+        string schemaName = statement.SchemaObjectName.SchemaIdentifier.Value;
+        string tableName = statement.SchemaObjectName.BaseIdentifier.Value;
+        IList<ColumnSpec> columns = statement.Definition.ColumnDefinitions
+            .Select(def =>
+            {
+                string identifier = def.ColumnIdentifier.Value;
+                string type = def.DataType.Name.BaseIdentifier.Value;
+                return new ColumnSpec(identifier, type);
+            }).ToArray();
+        this.schemas.Add(spec.Spec, new TableSpec(schemaName, tableName, columns.ToImmutableArray()));
     }
 }
 
@@ -71,9 +77,17 @@ public record SqlTemplateVariables(ImmutableDictionary<string, ImmutableArray<st
             .ToDictionary(pair => pair.Key, pair => pair.Value.ToImmutableArray())
             .ToImmutableDictionary());
     }
+
+    public ImmutableArray<string> this[string key]
+    {
+        get => variables.TryGetValue(key, out ImmutableArray<string> value) ? value : ImmutableArray<string>.Empty;
+    }
 }
 
-public readonly record struct SqlTemplateSpec(string Content, SqlTemplateVariables Variables);
+public readonly record struct SqlTemplateSpec(string Content, SqlTemplateVariables Variables)
+{
+    public string Spec => Variables["spec"].SingleOrDefault();
+}
 public class SqlFileReader
 {
     public static IEnumerable<SqlTemplateSpec> ReadToEnd(StringReader reader)
@@ -277,7 +291,7 @@ public class SqlFileReader
     }
 }
 public readonly record struct ColumnSpec(string Name, string Type);
-public readonly record struct TableSpec(string Schema, string Name, ColumnSpec[] Columns)
+public readonly record struct TableSpec(string Schema, string Name, ImmutableArray<ColumnSpec> Columns)
 {
 
 }
