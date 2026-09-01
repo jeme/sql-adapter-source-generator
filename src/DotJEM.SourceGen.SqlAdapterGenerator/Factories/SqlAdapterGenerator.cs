@@ -1,21 +1,56 @@
 ﻿using DotJEM.SourceGen.SqlAdapterGenerator.Util;
-using Microsoft.CodeAnalysis;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
-using System.Reflection.Metadata;
-using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
+using System.Text.RegularExpressions;
 
 namespace DotJEM.SourceGen.SqlAdapterGenerator.Factories;
 
+public static class StringTemplateFactory
+{
+    private static readonly Regex variablePattern = new Regex("@\\{(.+?)}", RegexOptions.Compiled);
+    private static readonly Regex newLinePattern = new Regex(@"\r\n?|\n", RegexOptions.Compiled);
+
+    public static StringTemplate Create(TemplateOptions options, string Template, string name, string Key)
+    {
+        string source = Template;
+        int index = 0;
+        StringBuilder builder = new();
+        HashSet<string> args = new();
+
+        source = newLinePattern.Replace(source, "\\n");
+        foreach (Match match in variablePattern.Matches(source).Cast<Match>())
+        {
+            string before = source.Substring(index, match.Index - index).Replace("\"", "\\\"");
+            string key = match.Groups[1].Value;
+            args.Add($"string {key}");
+            if (index > 0)
+                builder.Append(" + ");
+
+            builder.Append("\"");
+            builder.Append(before);
+            builder.Append("\" + ");
+            builder.Append(key);
+
+            index = match.Index + key.Length + 3;
+        }
+        string remainder = source.Substring(index).Replace("\"", "\\\"");
+        if (index > 0)
+            builder.Append(" + ");
+        builder.Append("\"");
+        builder.Append(remainder);
+        builder.Append("\"");
+
+        return new(options, name, Key, builder.ToString(), args.ToArray());
+    }
+}
 public class AdapterGenerator
 {
-    private Dictionary<string, string> map = new();
+    private List<SqlTemplateSpec> templates = new();
     private Dictionary<string, TableSpec> schemas = new();
 
 
@@ -28,11 +63,13 @@ public class AdapterGenerator
     {
         string name = PascalCaseTranform.Transform(Path.GetFileNameWithoutExtension(path));
 
-        IEnumerable<SqlTemplateSpec> specs = SqlFileReader
+        templates = SqlFileReader
             .ReadToEnd(new StringReader(content))
             .ToList();
-        foreach (SqlTemplateSpec spec in specs)
+        foreach (SqlTemplateSpec spec in templates)
         {
+            StringTemplate template = StringTemplateFactory.Create(options, spec.Content, "", "");
+
             TSqlParser parser = TSqlParser.CreateParser(SqlVersion.Sql170, false);
             TSqlScript script = (TSqlScript)parser.Parse(new StringReader(spec.Content), out IList<ParseError> errors);
             foreach (TSqlBatch batch in script.Batches)
@@ -46,12 +83,11 @@ public class AdapterGenerator
                 }
             }
 
-
-
         }
 
         Console.WriteLine();
     }
+
 
     private void AddTableSpec(SqlTemplateSpec spec, CreateTableStatement statement)
     {
@@ -78,16 +114,17 @@ public record SqlTemplateVariables(ImmutableDictionary<string, ImmutableArray<st
             .ToImmutableDictionary());
     }
 
-    public ImmutableArray<string> this[string key]
-    {
-        get => variables.TryGetValue(key, out ImmutableArray<string> value) ? value : ImmutableArray<string>.Empty;
-    }
+    public ImmutableArray<string> this[string key] => variables.TryGetValue(key, out ImmutableArray<string> value) ? value : ImmutableArray<string>.Empty;
 }
+
+
 
 public readonly record struct SqlTemplateSpec(string Content, SqlTemplateVariables Variables)
 {
     public string Spec => Variables["spec"].SingleOrDefault();
 }
+
+
 public class SqlFileReader
 {
     public static IEnumerable<SqlTemplateSpec> ReadToEnd(StringReader reader)
@@ -290,13 +327,11 @@ public class SqlFileReader
         }
     }
 }
+
+
 public readonly record struct ColumnSpec(string Name, string Type);
-public readonly record struct TableSpec(string Schema, string Name, ImmutableArray<ColumnSpec> Columns)
-{
 
-}
-
-
+public readonly record struct TableSpec(string Schema, string Name, ImmutableArray<ColumnSpec> Columns);
 //public class TableSpecReader
 //{
 //    public IEnumerable<SqlTemplateSpec> ReadToEnd(StringReader reader)

@@ -10,7 +10,7 @@ namespace DotJEM.SourceGen.SqlAdapterGenerator.Util;
 
 public class StringTemplateBuilder
 {
-    private readonly Regex pattern;
+    private readonly Regex pattern = new Regex("@\\{(.+?)}", RegexOptions.Compiled);
     private readonly Regex nlPattern = new Regex(@"\r\n?|\n", RegexOptions.Compiled);
 
     public StringTemplateBuilder(string pattern = "@\\{(.+?)}", RegexOptions options = RegexOptions.Compiled)
@@ -29,36 +29,39 @@ public class StringTemplateBuilder
         string sourceFromFile = content.GetText(token)!.ToString();
 
         foreach ((string Key, string Template) in new TemplateReader().ReadToEnd(new StringReader(sourceFromFile)))
+            yield return StringTemplate(options, Template, name, Key);
+    }
+
+    public StringTemplate StringTemplate(TemplateOptions options, string Template, string name, string Key)
+    {
+        string source = Template;
+        int index = 0;
+        StringBuilder builder = new StringBuilder();
+        HashSet<string> args = new();
+
+        source = nlPattern.Replace(source, "\\n");
+        foreach (Match match in pattern.Matches(source).Cast<Match>())
         {
-            string source = Template;
-            int index = 0;
-            StringBuilder builder = new StringBuilder();
-            HashSet<string> args = new();
-
-            source = nlPattern.Replace(source, "\\n");
-            foreach (Match match in pattern.Matches(source).Cast<Match>())
-            {
-                string before = source.Substring(index, match.Index - index).Replace("\"", "\\\"");
-                string key = match.Groups[1].Value;
-                args.Add($"string {key}");
-                if (index > 0)
-                    builder.Append(" + ");
-
-                builder.Append("\"");
-                builder.Append(before);
-                builder.Append("\" + ");
-                builder.Append(key);
-
-                index = match.Index + key.Length + 3;
-            }
-            string remainder = source.Substring(index).Replace("\"", "\\\"");
+            string before = source.Substring(index, match.Index - index).Replace("\"", "\\\"");
+            string key = match.Groups[1].Value;
+            args.Add($"string {key}");
             if (index > 0)
                 builder.Append(" + ");
-            builder.Append("\"");
-            builder.Append(remainder);
-            builder.Append("\"");
 
-            yield return new(options, name, Key, builder.ToString(), args.ToArray());
+            builder.Append("\"");
+            builder.Append(before);
+            builder.Append("\" + ");
+            builder.Append(key);
+
+            index = match.Index + key.Length + 3;
         }
+        string remainder = source.Substring(index).Replace("\"", "\\\"");
+        if (index > 0)
+            builder.Append(" + ");
+        builder.Append("\"");
+        builder.Append(remainder);
+        builder.Append("\"");
+
+        return new(options, name, Key, builder.ToString(), args.ToArray());
     }
 }
