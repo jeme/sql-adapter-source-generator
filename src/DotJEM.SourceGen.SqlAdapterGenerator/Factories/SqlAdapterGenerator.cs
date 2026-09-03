@@ -10,42 +10,31 @@ using System.Text.RegularExpressions;
 
 namespace DotJEM.SourceGen.SqlAdapterGenerator.Factories;
 
+public interface ITemplatePart;
+public readonly record struct Template(TemplateOptions Options, string Name, string Key, ITemplatePart[] Parts);
+public readonly record struct TemplateLiteral(string Source) : ITemplatePart;
+public readonly record struct TemplateVariable(string Name) : ITemplatePart;
+
 public static class StringTemplateFactory
 {
     private static readonly Regex variablePattern = new Regex("@\\{(.+?)}", RegexOptions.Compiled);
     private static readonly Regex newLinePattern = new Regex(@"\r\n?|\n", RegexOptions.Compiled);
 
-    public static StringTemplate Create(TemplateOptions options, string Template, string name, string Key)
+    public static Template Create(TemplateOptions options, string source, string name, string Key)
     {
-        string source = Template;
         int index = 0;
-        StringBuilder builder = new();
-        HashSet<string> args = new();
-
+        List<ITemplatePart> parts = new List<ITemplatePart>();
         source = newLinePattern.Replace(source, "\\n");
         foreach (Match match in variablePattern.Matches(source).Cast<Match>())
         {
-            string before = source.Substring(index, match.Index - index).Replace("\"", "\\\"");
             string key = match.Groups[1].Value;
-            args.Add($"string {key}");
-            if (index > 0)
-                builder.Append(" + ");
-
-            builder.Append("\"");
-            builder.Append(before);
-            builder.Append("\" + ");
-            builder.Append(key);
-
+            parts.Add(new TemplateLiteral(source.Substring(index, match.Index - index).Replace("\"", "\\\"")));
+            parts.Add(new TemplateVariable(key));
             index = match.Index + key.Length + 3;
         }
-        string remainder = source.Substring(index).Replace("\"", "\\\"");
-        if (index > 0)
-            builder.Append(" + ");
-        builder.Append("\"");
-        builder.Append(remainder);
-        builder.Append("\"");
+        parts.Add(new TemplateLiteral(source.Substring(index).Replace("\"", "\\\"")));
 
-        return new(options, name, Key, builder.ToString(), args.ToArray());
+        return new(options, name, Key, parts.ToArray());
     }
 }
 public class AdapterGenerator
@@ -82,7 +71,6 @@ public class AdapterGenerator
                     }
                 }
             }
-
         }
 
         Console.WriteLine();
