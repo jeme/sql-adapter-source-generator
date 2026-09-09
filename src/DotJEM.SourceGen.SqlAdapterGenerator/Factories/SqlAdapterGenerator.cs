@@ -1,4 +1,5 @@
 ﻿using DotJEM.SourceGen.SqlAdapterGenerator.Util;
+using Microsoft.CodeAnalysis;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using System;
 using System.Collections.Generic;
@@ -37,41 +38,43 @@ public static class StringTemplateFactory
         return new(options, name, Key, parts.ToArray());
     }
 }
+
+sealed class ParameterVisitor : TSqlFragmentVisitor
+{
+    public List<string> Parameters { get; } = new();
+
+    public override void ExplicitVisit(VariableReference node)
+    {
+        Parameters.Add(node.Name);
+    }
+}
+
 public class AdapterGenerator
 {
     private List<SqlTemplateSpec> templates = new();
     private Dictionary<string, TableSpec> schemas = new();
+    private Dictionary<string, List<SqlTemplateSpec>> adapters = new();
 
 
-    public string Generate()
+    public IEnumerable<AdapterOutput> Generate()
     {
-        return "";
+
+
+        return [];
     }
 
     public void AddFile(string path, string content, TemplateOptions options)
     {
         string name = PascalCaseTranform.Transform(Path.GetFileNameWithoutExtension(path));
 
-        templates = SqlFileReader.ReadAllSpecs(content).ToList();
+        templates = SqlFileReader.ReadAllSpecs(content, name, options).ToList();
         foreach (SqlTemplateSpec spec in templates)
         {
-            Template template = StringTemplateFactory.Create(options, spec.Content, "", "");
-
-            TSqlParser parser = TSqlParser.CreateParser(SqlVersion.Sql170, false);
-            TSqlScript script = (TSqlScript)parser.Parse(new StringReader(spec.Content), out IList<ParseError> errors);
-            foreach (TSqlBatch batch in script.Batches)
-            {
-                foreach (TSqlStatement statement in batch.Statements)
-                {
-                    if (statement is CreateTableStatement createTableStatement)
-                    {
-                        AddTableSpec(spec, createTableStatement);
-                    }
-                }
-            }
+            if (!adapters.TryGetValue(spec.AdapterName, out List<SqlTemplateSpec> list))
+                adapters.Add(spec.AdapterName, list = []);
+            list.Add(spec);
         }
 
-        Console.WriteLine();
     }
 
 
@@ -90,34 +93,47 @@ public class AdapterGenerator
     }
 }
 
-public record SqlTemplateVariables(ImmutableDictionary<string, ImmutableArray<string>> Variables)
+public readonly record struct AdapterOutput
 {
-    public static SqlTemplateVariables From(IDictionary<string, HashSet<string>> dictionary)
+}
+
+public record struct SqlTemplateVariables(ImmutableDictionary<string, ImmutableArray<string>> Variables)
+{
+    public static ImmutableDictionary<string, ImmutableArray<string>> From(IDictionary<string, HashSet<string>> dictionary)
     {
         return new SqlTemplateVariables(dictionary
             .ToDictionary(pair => pair.Key, pair => pair.Value.ToImmutableArray())
-            .ToImmutableDictionary());
+            .ToImmutableDictionary()).Variables;
+    }
+}
+
+public static class DictionaryExtensions
+{
+    extension(ImmutableDictionary<string, ImmutableArray<string>> self)
+    {
+        public string FirstOrDefault(string key) => self.TryGetValue(key, out ImmutableArray<string> value)
+             ? value.FirstOrDefault()
+             : null;
     }
 
-    public ImmutableArray<string> this[string key] => Variables.TryGetValue(key, out ImmutableArray<string> value) ? value : ImmutableArray<string>.Empty;
-
-    public void AddGlobals(Dictionary<string, HashSet<string>> globals)
+    public static void Add(this IDictionary<string, HashSet<string>> dictionary, string key, string value)
     {
-        Dictionary<string, ImmutableArray<string>> all;
+        if (!dictionary.TryGetValue(key, out HashSet<string> set))
+            dictionary.Add(key, set = new());
+        set.Add(value);
     }
 }
 
 
-
-public readonly record struct SqlTemplateSpec(string Content, SqlTemplateVariables Variables)
+public readonly record struct SqlTemplateSpec(
+    string Name,
+    Template Template,
+    ImmutableDictionary<string, ImmutableArray<string>> Variables,
+    ImmutableArray<string> Parameters)
 {
-    public string Spec => Variables["spec"].SingleOrDefault();
+    public string Spec => Variables.FirstOrDefault("spec");
+    public string AdapterName => Variables.FirstOrDefault("adapter") ?? $"{Name}Adapter";
 
-    public SqlTemplateSpec AddGlobals(Dictionary<string, HashSet<string>> globals)
-    {
-        Variables.AddGlobals(globals);
-        return this;
-    }
 }
 
 public class SqlTemplateSpecBuilder
@@ -132,15 +148,38 @@ public class SqlTemplateSpecBuilder
     {
         if (!variables.TryGetValue(key, out HashSet<string> set))
             variables.Add(key, set = new());
+
         foreach (var value in values)
             set.Add(value);
     }
-    public SqlTemplateSpec Build(IDictionary<string, HashSet<string>> globals)
+    public SqlTemplateSpec Build(IDictionary<string, HashSet<string>> globals, string name, TemplateOptions options)
     {
         foreach (KeyValuePair<string, HashSet<string>> pair in globals)
             AddVariable(pair.Key, pair.Value.ToArray());
 
-        return new SqlTemplateSpec(content.ToString(), SqlTemplateVariables.From(variables));
+        string content = this.content.ToString();
+        Template template = StringTemplateFactory.Create(options, content, "", "");
+
+        TSqlParser parser = TSqlParser.CreateParser(SqlVersion.Sql170, false);
+        TSqlScript script = (TSqlScript)parser.Parse(new StringReader(content), out IList<ParseError> errors);
+        ParameterVisitor visitor = new();
+        foreach (TSqlBatch batch in script.Batches)
+        {
+            foreach (TSqlStatement statement in batch.Statements)
+            {
+                statement.Accept(visitor);
+
+                if (statement is CreateTableStatement createTableStatement)
+                {
+                    //TODO: Push out or???
+                    //AddTableSpec(spec, createTableStatement);
+                }
+
+
+
+            }
+        }
+        return new SqlTemplateSpec(name, template, SqlTemplateVariables.From(variables), visitor.Parameters.ToImmutableArray());
     }
 
     public bool IsEmpty()
@@ -150,12 +189,12 @@ public class SqlTemplateSpecBuilder
 }
 public class SqlFileReader
 {
-    public static List<SqlTemplateSpec> ReadAllSpecs(string content)
+    public static List<SqlTemplateSpec> ReadAllSpecs(string content, string name, TemplateOptions options)
     {
         using StringReader reader = new StringReader(content);
         Dictionary<string, HashSet<string>> globals = new();
         SqlTemplateSpecBuilder[] specs = ReadToEnd(reader, globals).ToArray();
-        return specs.Select(spec => spec.Build(globals)).ToList();
+        return specs.Select(spec => spec.Build(globals, name, options)).ToList();
     }
 
     public static IEnumerable<SqlTemplateSpecBuilder> ReadToEnd(StringReader reader, Dictionary<string, HashSet<string>> globals)
@@ -164,9 +203,9 @@ public class SqlFileReader
         bool capturingHeader = false;
         while (reader.ReadLine() is { } line)
         {
-            if(line.Length == 0)
+            if (line.Length == 0)
                 continue;
-            
+
             if (line.StartsWith("--#"))
             {
                 Variables(line.AsSpan(3), (key, values) =>
@@ -176,12 +215,12 @@ public class SqlFileReader
                 capturingHeader = true;
                 continue;
             }
-            
+
             if (line.StartsWith("--"))
             {
                 if (!capturingHeader)
                 {
-                    if(!builder.IsEmpty()) yield return builder;
+                    if (!builder.IsEmpty()) yield return builder;
                     builder = new SqlTemplateSpecBuilder();
                 }
 
