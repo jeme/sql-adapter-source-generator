@@ -83,7 +83,7 @@ public class SqlAdapterGeneratorTest
                                              WHERE [Id] = @id;
                                            """, new TemplateOptions("", "", ""));
 
-        string output = generator.Generate();
+        AdapterOutput[] output = generator.Generate().ToArray();
         
         Assert.That(output.ToString(), Is.EqualTo(""));
     }

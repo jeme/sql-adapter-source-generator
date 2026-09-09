@@ -51,9 +51,8 @@ sealed class ParameterVisitor : TSqlFragmentVisitor
 
 public class AdapterGenerator
 {
-    private List<SqlTemplateSpec> templates = new();
-    private Dictionary<string, TableSpec> schemas = new();
-    private Dictionary<string, List<SqlTemplateSpec>> adapters = new();
+    private readonly Dictionary<string, TableSpec> schemas = new();
+    private readonly Dictionary<string, List<SqlTemplateSpec>> adapters = new();
 
 
     public IEnumerable<AdapterOutput> Generate()
@@ -67,7 +66,9 @@ public class AdapterGenerator
     {
         string name = PascalCaseTranform.Transform(Path.GetFileNameWithoutExtension(path));
 
-        templates = SqlFileReader.ReadAllSpecs(content, name, options).ToList();
+        List<SqlTemplateSpec> templates = SqlFileReader
+            .ReadAllSpecs(content, name, options, AddTableSpec)
+            .ToList();
         foreach (SqlTemplateSpec spec in templates)
         {
             if (!adapters.TryGetValue(spec.AdapterName, out List<SqlTemplateSpec> list))
@@ -78,7 +79,7 @@ public class AdapterGenerator
     }
 
 
-    private void AddTableSpec(SqlTemplateSpec spec, CreateTableStatement statement)
+    private void AddTableSpec(CreateTableStatement statement)
     {
         string schemaName = statement.SchemaObjectName.SchemaIdentifier.Value;
         string tableName = statement.SchemaObjectName.BaseIdentifier.Value;
@@ -89,7 +90,7 @@ public class AdapterGenerator
                 string type = def.DataType.Name.BaseIdentifier.Value;
                 return new ColumnSpec(identifier, type);
             }).ToArray();
-        this.schemas.Add(spec.Spec, new TableSpec(schemaName, tableName, columns.ToImmutableArray()));
+        this.schemas.Add($"{schemaName}.{tableName}", new TableSpec(schemaName, tableName, columns.ToImmutableArray()));
     }
 }
 
@@ -116,11 +117,12 @@ public static class DictionaryExtensions
              : null;
     }
 
-    public static void Add(this IDictionary<string, HashSet<string>> dictionary, string key, string value)
+    public static void AddVariables(this IDictionary<string, HashSet<string>> dictionary, string key, IEnumerable<string> values)
     {
         if (!dictionary.TryGetValue(key, out HashSet<string> set))
             dictionary.Add(key, set = new());
-        set.Add(value);
+        foreach (string value in values)
+            set.Add(value);
     }
 }
 
@@ -152,7 +154,7 @@ public class SqlTemplateSpecBuilder
         foreach (var value in values)
             set.Add(value);
     }
-    public SqlTemplateSpec Build(IDictionary<string, HashSet<string>> globals, string name, TemplateOptions options)
+    public SqlTemplateSpec Build(IDictionary<string, HashSet<string>> globals, string name, TemplateOptions options, Action<CreateTableStatement> addTableSpecCallback)
     {
         foreach (KeyValuePair<string, HashSet<string>> pair in globals)
             AddVariable(pair.Key, pair.Value.ToArray());
@@ -172,7 +174,8 @@ public class SqlTemplateSpecBuilder
                 if (statement is CreateTableStatement createTableStatement)
                 {
                     //TODO: Push out or???
-                    //AddTableSpec(spec, createTableStatement);
+                    addTableSpecCallback(createTableStatement);
+                    
                 }
 
 
@@ -184,17 +187,17 @@ public class SqlTemplateSpecBuilder
 
     public bool IsEmpty()
     {
-        return content.Length > 0;
+        return content.Length == 0;
     }
 }
 public class SqlFileReader
 {
-    public static List<SqlTemplateSpec> ReadAllSpecs(string content, string name, TemplateOptions options)
+    public static List<SqlTemplateSpec> ReadAllSpecs(string content, string name, TemplateOptions options, Action<CreateTableStatement> addTableSpecCallback)
     {
         using StringReader reader = new StringReader(content);
         Dictionary<string, HashSet<string>> globals = new();
         SqlTemplateSpecBuilder[] specs = ReadToEnd(reader, globals).ToArray();
-        return specs.Select(spec => spec.Build(globals, name, options)).ToList();
+        return specs.Select(spec => spec.Build(globals, name, options, addTableSpecCallback)).ToList();
     }
 
     public static IEnumerable<SqlTemplateSpecBuilder> ReadToEnd(StringReader reader, Dictionary<string, HashSet<string>> globals)
@@ -208,10 +211,7 @@ public class SqlFileReader
 
             if (line.StartsWith("--#"))
             {
-                Variables(line.AsSpan(3), (key, values) =>
-                {
-                    builder.AddVariable(key, values);
-                });
+                Variables(line.AsSpan(3), globals.AddVariables);
                 capturingHeader = true;
                 continue;
             }
