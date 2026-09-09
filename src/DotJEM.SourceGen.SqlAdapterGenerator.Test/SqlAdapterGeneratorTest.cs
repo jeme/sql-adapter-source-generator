@@ -15,6 +15,8 @@ public class SqlAdapterGeneratorTest
         AdapterGenerator generator = new ();
         generator.AddFile("C:\\dummy\\path\\file.sql",
                                            """
+                                           --#adapter:DataTableAdapter
+                                           
                                            --spec: DataTable
                                            CREATE TABLE [@{schema}].[@{data_table_name}] (
                                                [Id] [uniqueidentifier] NOT NULL,

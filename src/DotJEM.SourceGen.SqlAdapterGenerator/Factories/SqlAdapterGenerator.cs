@@ -52,12 +52,10 @@ public class AdapterGenerator
     {
         string name = PascalCaseTranform.Transform(Path.GetFileNameWithoutExtension(path));
 
-        templates = SqlFileReader
-            .ReadToEnd(new StringReader(content))
-            .ToList();
+        templates = SqlFileReader.ReadAllSpecs(content).ToList();
         foreach (SqlTemplateSpec spec in templates)
         {
-            StringTemplate template = StringTemplateFactory.Create(options, spec.Content, "", "");
+            Template template = StringTemplateFactory.Create(options, spec.Content, "", "");
 
             TSqlParser parser = TSqlParser.CreateParser(SqlVersion.Sql170, false);
             TSqlScript script = (TSqlScript)parser.Parse(new StringReader(spec.Content), out IList<ParseError> errors);
@@ -92,9 +90,8 @@ public class AdapterGenerator
     }
 }
 
-public record SqlTemplateVariables(ImmutableDictionary<string, ImmutableArray<string>> variables)
+public record SqlTemplateVariables(ImmutableDictionary<string, ImmutableArray<string>> Variables)
 {
-    
     public static SqlTemplateVariables From(IDictionary<string, HashSet<string>> dictionary)
     {
         return new SqlTemplateVariables(dictionary
@@ -102,7 +99,12 @@ public record SqlTemplateVariables(ImmutableDictionary<string, ImmutableArray<st
             .ToImmutableDictionary());
     }
 
-    public ImmutableArray<string> this[string key] => variables.TryGetValue(key, out ImmutableArray<string> value) ? value : ImmutableArray<string>.Empty;
+    public ImmutableArray<string> this[string key] => Variables.TryGetValue(key, out ImmutableArray<string> value) ? value : ImmutableArray<string>.Empty;
+
+    public void AddGlobals(Dictionary<string, HashSet<string>> globals)
+    {
+        Dictionary<string, ImmutableArray<string>> all;
+    }
 }
 
 
@@ -110,51 +112,94 @@ public record SqlTemplateVariables(ImmutableDictionary<string, ImmutableArray<st
 public readonly record struct SqlTemplateSpec(string Content, SqlTemplateVariables Variables)
 {
     public string Spec => Variables["spec"].SingleOrDefault();
+
+    public SqlTemplateSpec AddGlobals(Dictionary<string, HashSet<string>> globals)
+    {
+        Variables.AddGlobals(globals);
+        return this;
+    }
 }
 
+public class SqlTemplateSpecBuilder
+{
+    private readonly StringBuilder content = new();
+    private readonly Dictionary<string, HashSet<string>> variables = new();
+    public void AppendLine(string line)
+    {
+        content.AppendLine(line);
+    }
+    public void AddVariable(string key, string[] values)
+    {
+        if (!variables.TryGetValue(key, out HashSet<string> set))
+            variables.Add(key, set = new());
+        foreach (var value in values)
+            set.Add(value);
+    }
+    public SqlTemplateSpec Build(IDictionary<string, HashSet<string>> globals)
+    {
+        foreach (KeyValuePair<string, HashSet<string>> pair in globals)
+            AddVariable(pair.Key, pair.Value.ToArray());
 
+        return new SqlTemplateSpec(content.ToString(), SqlTemplateVariables.From(variables));
+    }
+
+    public bool IsEmpty()
+    {
+        return content.Length > 0;
+    }
+}
 public class SqlFileReader
 {
-    public static IEnumerable<SqlTemplateSpec> ReadToEnd(StringReader reader)
+    public static List<SqlTemplateSpec> ReadAllSpecs(string content)
     {
-        StringBuilder buffer = new();
+        using StringReader reader = new StringReader(content);
+        Dictionary<string, HashSet<string>> globals = new();
+        SqlTemplateSpecBuilder[] specs = ReadToEnd(reader, globals).ToArray();
+        return specs.Select(spec => spec.Build(globals)).ToList();
+    }
 
-        Dictionary<string, HashSet<string>> variables = new();
+    public static IEnumerable<SqlTemplateSpecBuilder> ReadToEnd(StringReader reader, Dictionary<string, HashSet<string>> globals)
+    {
+        SqlTemplateSpecBuilder builder = new SqlTemplateSpecBuilder();
         bool capturingHeader = false;
         while (reader.ReadLine() is { } line)
         {
+            if(line.Length == 0)
+                continue;
+            
+            if (line.StartsWith("--#"))
+            {
+                Variables(line.AsSpan(3), (key, values) =>
+                {
+                    builder.AddVariable(key, values);
+                });
+                capturingHeader = true;
+                continue;
+            }
+            
             if (line.StartsWith("--"))
             {
                 if (!capturingHeader)
                 {
-                    if(buffer.Length > 0) yield return new SqlTemplateSpec(buffer.ToString(), SqlTemplateVariables.From(variables));
-                    buffer.Clear();
-                    variables.Clear();
+                    if(!builder.IsEmpty()) yield return builder;
+                    builder = new SqlTemplateSpecBuilder();
                 }
 
-                Variables(line, (key, values) =>
+                Variables(line.AsSpan(2), (key, values) =>
                 {
-                    if (!variables.TryGetValue(key, out HashSet<string> set))
-                        variables.Add(key, set = new());
-
-                    foreach (var value in values)
-                        set.Add(value);
+                    builder.AddVariable(key, values);
                 });
                 capturingHeader = true;
                 continue;
             }
 
             capturingHeader = false;
-            buffer.AppendLine(line);
+            builder.AppendLine(line);
         }
-        yield return new SqlTemplateSpec(buffer.ToString(), SqlTemplateVariables.From(variables));
+        yield return builder;
     }
 
-    //private static IEnumerable<SqlTemplateVariable> Variables(string line, Action<string, string[]> addValue)
-    //{
-    //}
-
-    static void Variables(string line, Action<string, string[]> onVariable)
+    static void Variables(ReadOnlySpan<char> line, Action<string, string[]> onVariable)
     {
         int position = 0;
 
@@ -173,6 +218,7 @@ public class SqlFileReader
                 position += 2;
             }
 
+
             int keyStart = position;
 
             while (position < line.Length &&
@@ -185,7 +231,7 @@ public class SqlFileReader
             if (position >= line.Length || line[position] != ':')
                 throw new FormatException($"Expected ':' at position {position}.");
 
-            string key = line.Substring(keyStart, position - keyStart);
+            string key = line.Slice(keyStart, position - keyStart).ToString();
 
             position++; // Skip ':'
             SkipWhitespace(line, ref position);
@@ -241,7 +287,7 @@ public class SqlFileReader
         }
     }
 
-    static string ReadValue(string text, ref int position)
+    static string ReadValue(ReadOnlySpan<char> text, ref int position)
     {
         if (position >= text.Length)
             throw new FormatException("Expected a value.");
@@ -249,14 +295,13 @@ public class SqlFileReader
         if (text[position] == '"')
         {
             int start = ++position;
-
             while (position < text.Length && text[position] != '"')
                 position++;
 
             if (position >= text.Length)
                 throw new FormatException("Unclosed quoted value.");
 
-            string value = text.Substring(start, position - start);
+            string value = text.Slice(start, position - start).ToString();
             position++; // Skip closing quote
 
             return value;
@@ -274,10 +319,10 @@ public class SqlFileReader
         if (position == valueStart)
             throw new FormatException($"Expected a value at position {position}.");
 
-        return text.Substring(valueStart, position - valueStart);
+        return text.Slice(valueStart, position - valueStart).ToString();
     }
 
-    static void SkipValue(string text, ref int position)
+    static void SkipValue(ReadOnlySpan<char> text, ref int position)
     {
         if (text[position] == '"')
         {
@@ -306,7 +351,7 @@ public class SqlFileReader
             throw new FormatException($"Expected a value at position {position}.");
     }
 
-    static void SkipWhitespace(string text, ref int position)
+    static void SkipWhitespace(ReadOnlySpan<char> text, ref int position)
     {
         while (position < text.Length &&
                char.IsWhiteSpace(text[position]))
